@@ -1152,7 +1152,7 @@ if CLIENT then
 		{bit = K.LHAND,  def = MOUSE_LEFT,    cv = CreateClientConVar("wr_bind_lhand",  tostring(MOUSE_LEFT),    true, false), label = "Левая рука тянется вперёд"},
 		{bit = K.RHAND,  def = MOUSE_RIGHT,   cv = CreateClientConVar("wr_bind_rhand",  tostring(MOUSE_RIGHT),   true, false), label = "Правая рука тянется вперёд"},
 		{bit = K.GRABL,  def = KEY_LSHIFT,    cv = CreateClientConVar("wr_bind_grabl",  tostring(KEY_LSHIFT),    true, false), label = "Левая рука хватает"},
-		{bit = K.GRABR,  def = KEY_LALT,      cv = CreateClientConVar("wr_bind_grabr",  tostring(KEY_LALT),      true, false), label = "Правая рука хватает"},
+		{bit = K.GRABR,  def = KEY_SPACE,      cv = CreateClientConVar("wr_bind_grabr",  tostring(KEY_SPACE),      true, false), label = "Правая рука хватает"},
 		{bit = K.TENSE,  def = KEY_E,         cv = CreateClientConVar("wr_bind_tense",  tostring(KEY_E),         true, false), label = "Напрячь тело (голова/спина следуют за мышью)"},
 		{bit = K.LEGS,   def = KEY_LCONTROL,  cv = CreateClientConVar("wr_bind_legs",   tostring(KEY_LCONTROL),  true, false), label = "Ноги"},
 		{bit = K.FWD,    def = KEY_W,         cv = CreateClientConVar("wr_bind_fwd",    tostring(KEY_W),         true, false), label = "Подтянуться к схваченному"},
