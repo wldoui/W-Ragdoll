@@ -1152,7 +1152,7 @@ if CLIENT then
 		{bit = K.LHAND,  def = MOUSE_LEFT,    cv = CreateClientConVar("wr_bind_lhand",  tostring(MOUSE_LEFT),    true, false), label = "Левая рука тянется вперёд"},
 		{bit = K.RHAND,  def = MOUSE_RIGHT,   cv = CreateClientConVar("wr_bind_rhand",  tostring(MOUSE_RIGHT),   true, false), label = "Правая рука тянется вперёд"},
 		{bit = K.GRABL,  def = KEY_LSHIFT,    cv = CreateClientConVar("wr_bind_grabl",  tostring(KEY_LSHIFT),    true, false), label = "Левая рука хватает"},
-		{bit = K.GRABR,  def = KEY_SPACE,      cv = CreateClientConVar("wr_bind_grabr",  tostring(KEY_SPACE),      true, false), label = "Правая рука хватает"},
+		{bit = K.GRABR,  def = KEY_LALT,      cv = CreateClientConVar("wr_bind_grabr",  tostring(KEY_LALT),      true, false), label = "Правая рука хватает"},
 		{bit = K.TENSE,  def = KEY_E,         cv = CreateClientConVar("wr_bind_tense",  tostring(KEY_E),         true, false), label = "Напрячь тело (голова/спина следуют за мышью)"},
 		{bit = K.LEGS,   def = KEY_LCONTROL,  cv = CreateClientConVar("wr_bind_legs",   tostring(KEY_LCONTROL),  true, false), label = "Ноги"},
 		{bit = K.FWD,    def = KEY_W,         cv = CreateClientConVar("wr_bind_fwd",    tostring(KEY_W),         true, false), label = "Подтянуться к схваченному"},
@@ -1354,15 +1354,16 @@ if CLIENT then
 
 		local att = follow:GetAttachment(follow:LookupAttachment("eyes"))
 		if att then
-			local head = Angle(att.Ang.p, att.Ang.y, att.Ang.r)
-			head:Normalize()
-			local _, rel = WorldToLocal(vector_origin, a, vector_origin, head)
-			rel:Normalize()
-			rel.p = math.Clamp(rel.p, -90, 90)
-			rel.y = math.Clamp(rel.y, -90, 90)
-			local _, c = LocalToWorld(vector_origin, rel, vector_origin, head)
-			c:Normalize()
-			a = c
+			local LIMIT = 100
+			local hf, af = att.Ang:Forward(), a:Forward()
+			local ang = math.deg(math.acos(math.Clamp(hf:Dot(af), -1, 1)))
+			if ang > LIMIT then
+				local axis = hf:Cross(af)
+				if axis:LengthSqr() < 0.0001 then axis = att.Ang:Up() end
+				axis:Normalize()
+				a:RotateAroundAxis(axis, LIMIT - ang)
+				a:Normalize()
+			end
 		end
 
 		ply.WR_Roll = a.roll
