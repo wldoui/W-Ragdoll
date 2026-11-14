@@ -379,7 +379,18 @@ if SERVER then
 			-- engine flashlight / tools start at the player eyes: put them exactly into the camera
 			local att = rag:GetAttachment(rag:LookupAttachment("eyes"))
 			if att then
-				pos = att.Pos + att.Ang:Forward() - ply:GetViewOffset()
+				local eye = att.Pos + att.Ang:Forward()
+				-- never put the player entity into a wall: PVS would be computed from a solid
+				local sp = rag:GetPhysicsObjectNum(PhysNum(rag, 1))
+				if IsValid(sp) then
+					local tr = util.TraceHull({
+						start = sp:GetPos(), endpos = eye,
+						mins = Vector(-2, -2, -2), maxs = Vector(2, 2, 2),
+						mask = MASK_SOLID_BRUSHONLY,
+					})
+					if tr.Hit then eye = tr.HitPos end
+				end
+				pos = eye - ply:GetViewOffset()
 			else
 				local hp = rag:GetPhysicsObjectNum(PhysNum(rag, 10))
 				if IsValid(hp) then pos = hp:GetPos() end
@@ -1124,14 +1135,21 @@ if SERVER then
 			if IsValid(ply.WR_Rag) then WR.FakeUp(ply, true) end
 		end
 	end)
-
+	
 	hook.Add("SetupPlayerVisibility", "WR_PVS", function(ply)
 		local ent = ply:GetNWEntity("WR_Rag")
-		if IsValid(ent) and not ent:TestPVS(ply) then AddOriginToPVS(ent:GetPos()) end
+		if not IsValid(ent) then return end
+		-- always send the ragdoll, even if the player entity is in a bad leaf
+		AddOriginToPVS(ent:GetPos())
+		local hp = ent:GetPhysicsObjectNum(PhysNum(ent, 10))
+		if IsValid(hp) then AddOriginToPVS(hp:GetPos()) end
+		local sp = ent:GetPhysicsObjectNum(PhysNum(ent, 1))
+		if IsValid(sp) then AddOriginToPVS(sp:GetPos()) end
 	end)
 end
 
 if CLIENT then
+	local cv_camdown = CreateClientConVar("wr_cam_down", "2", true, false, "Camera offset down from the eyes (units)", -5, 10)
 	local cv_third = CreateClientConVar("wr_thirdperson", "0", true, false, "Third person camera while in ragdoll", 0, 1)
 	local cv_hud = CreateClientConVar("wr_hud", "1", true, false, "Show hand indicators while in ragdoll", 0, 1)
 	local cv_hand = CreateClientConVar("wr_weapon_hand", "0", true, false, "Weapon in the left hand (1) or right hand (0)", 0, 1)
@@ -1455,14 +1473,24 @@ if CLIENT then
 		-- the view angles are the mouse angles (clamped to the head in InputMouseApply), so the engine flashlight matches the camera
 		local viewAng = Angle(angles.p, angles.y, angles.r)
 
-		-- the camera sits exactly in the eyes
-		local pos = att.Pos + attAng:Forward()
+		-- the camera sits in the eyes, a bit lower (wr_cam_down)
+		local pos = att.Pos + attAng:Forward() - attAng:Up() * cv_camdown:GetFloat()
 
-		-- only if the eyes are inside the world (head pressed into a wall) the camera is pulled back out
-		local hb = follow:GetBoneMatrix(head)
-		local from = hb and hb:GetTranslation() or att.Pos
-		local ctr = util.TraceHull({start = from, endpos = pos, mins = HULL_MIN, maxs = HULL_MAX, filter = {ply, follow}, mask = MASK_SOLID_BRUSHONLY})
+		-- anchor = torso (almost never inside a wall), the camera is traced from it, never from the head
+		local sb = follow:LookupBone("ValveBiped.Bip01_Spine2")
+		local sm = sb and follow:GetBoneMatrix(sb)
+		local anchor = sm and sm:GetTranslation() or follow:GetPos()
+
+		local ctr = util.TraceHull({start = anchor, endpos = pos, mins = HULL_MIN, maxs = HULL_MAX, mask = MASK_SOLID_BRUSHONLY})
 		if ctr.Hit then pos = ctr.HitPos end
+
+		-- last guard: the camera must never be in a solid, otherwise the view freezes
+		if bit.band(util.PointContents(pos), CONTENTS_SOLID) ~= 0 then
+			for i = 1, 8 do
+				pos = LerpVector(0.25, pos, anchor)
+				if bit.band(util.PointContents(pos), CONTENTS_SOLID) == 0 then break end
+			end
+		end
 
 		local third = cv_third:GetBool()
 		HeadScale(follow, not third)
@@ -1494,7 +1522,7 @@ if CLIENT then
 	end)
 
 	------------------------------------------------------------------ settings menu (Q -> Utilities -> W-City Ragdoll)
-	local CL_CVARS = {"wr_key", "wr_thirdperson", "wr_hud", "wr_weapon_hand"}
+	local CL_CVARS = {"wr_key", "wr_thirdperson", "wr_hud", "wr_weapon_hand", "wr_cam_down"}
 	for _, a in ipairs(ACTIONS) do CL_CVARS[#CL_CVARS + 1] = a.cv:GetName() end
 
 	local function ReadPresets(path)
@@ -1579,6 +1607,8 @@ if CLIENT then
 			for _, name in ipairs(CL_CVARS) do t[name] = GetConVar(name):GetDefault() end
 			setAll(t)
 		end
+
+		panel:NumSlider("Камера ниже (юниты от глаз)", "wr_cam_down", -5, 10, 1)
 
 		panel:Help(" ")
 		panel:CheckBox("Вид от третьего лица в рагдоле", "wr_thirdperson")
