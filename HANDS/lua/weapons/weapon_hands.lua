@@ -232,6 +232,27 @@ function SWEP:DoHit(idx)
 			phys:ApplyForceOffset(dir * 12000 * mult, tr.HitPos)
 		end
 	end
+		-- Пыль и декаль только по твёрдым поверхностям (стены/мир/статик-пропы), не по игрокам/NPC
+	if tr.HitSky then return end
+	if not IsValid(ent) or (ent:IsWorld() or not (ent:IsPlayer() or ent:IsNPC())) then
+		self:WallHitFX(tr)
+	end
+end
+
+
+function SWEP:WallHitFX(tr)
+	-- Декаль (след удара), подобранный по материалу поверхности
+	local decal = SURFACE_DECAL[tr.MatType] or "Impact.Concrete"
+	util.Decal(decal, tr.StartPos, tr.HitPos)
+
+	-- Пыль/искры/осколки — движок сам подбирает частицы под материал
+	local ed = EffectData()
+	ed:SetOrigin(tr.HitPos)
+	ed:SetNormal(tr.HitNormal)
+	ed:SetStart(tr.StartPos)
+	ed:SetEntity(ent or game.GetWorld())
+	ed:SetScale(1)
+	util.Effect("Impact", ed, true, true)
 end
 
 function SWEP:Think()

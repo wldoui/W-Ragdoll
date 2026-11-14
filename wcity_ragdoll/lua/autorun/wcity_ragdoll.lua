@@ -36,7 +36,7 @@ WR.SvVars = {
 	{name = "wr_fall_dmg_scale",    kind = "num",  def = "1",   min = 0,   max = 5,    dec = 2, label = "Множитель урона от падения"},
 	{name = "wr_fall_dmg_minspeed", kind = "num",  def = "580", min = 100, max = 1500, dec = 0, label = "Безопасная скорость удара"},
 	{name = "wr_damage_mult",       kind = "num",  def = "1",   min = 0,   max = 5,    dec = 2, label = "Множитель получаемого урона в рагдоле"},
-	{name = "wr_autofall",          kind = "bool", def = "0",   min = 0,   max = 1,    label = "Падая в воздухе, становиться рагдолом"},
+	{name = "wr_autofall",          kind = "bool", def = "1",   min = 0,   max = 1,    label = "Падая в воздухе, становиться рагдолом"},
 	{name = "wr_autofall_speed",    kind = "num",  def = "500", min = 200, max = 2000, dec = 0, label = "Скорость падения для авто-рагдола"},
 	{name = "wr_auto_getup",        kind = "num",  def = "3",   min = 0,   max = 30,   dec = 1, label = "Авто-вставание после авто-рагдола, сек (0 = вручную)"},
 	{name = "wr_hit_ragdoll",       kind = "bool", def = "0",   min = 0,   max = 1,    label = "Рагдол от сильного удара"},
