@@ -45,7 +45,7 @@ WR.SvVars = {
 	{name = "wr_allow_weapons",     kind = "bool", def = "1",   min = 0,   max = 1,    label = "Оружие в руках рагдола"},
 	{name = "wr_muzzle_aim",        kind = "bool", def = "0",   min = 0,   max = 1,    label = "Пули летят в точку прицела (иначе строго по стволу)"},
 	{name = "wr_arm_force",         kind = "num",  def = "600", min = 100, max = 3000, dec = 0, label = "Сила рук"},
-	{name = "wr_roll_power",        kind = "num",  def = "3",   min = 0,   max = 3,    dec = 2, label = "Сила кувырков (A / D)"},
+	{name = "wr_roll_power",        kind = "num",  def = "1",   min = 0,   max = 3,    dec = 2, label = "Сила кувырков (A / D)"},
 	{name = "wr_grip_force",        kind = "num",  def = "250000", min = 0, max = 2000000, dec = 0, label = "Сила сжатия рук (0 = не разжимаются)"},
 	{name = "wr_pull_force",        kind = "num",  def = "1",   min = 0.1, max = 5,    dec = 2, label = "Сила тяги рук (W / S)"},
 	{name = "wr_hull_width",        kind = "num",  def = "16",  min = 4,   max = 20,   dec = 0, label = "Ширина коллайдера игрока вне рагдола, Поумолчанию: 16"},
@@ -186,6 +186,10 @@ local function ApplyHull(ply)
 	ply:SetHullDuck(Vector(-w, -w, 0), Vector(w, w, hd))
 	ply:SetViewOffset(Vector(0, 0, h - 8))
 	ply:SetViewOffsetDucked(Vector(0, 0, hd - 8))
+end
+
+function WR.RollRate()
+	return CV.wr_roll_power:GetFloat() * 70
 end
 
 hook.Add("StartCommand", "WR_Keys", function(ply, cmd)
@@ -781,16 +785,13 @@ if SERVER then
 		torso:ApplyForceCenter(force)
 	end
 
-	-- A / D: the whole body spins around its own long axis (pelvis -> head)
-	-- dir = 1 spins left (A), dir = -1 spins right (D)
-	local function RollBody(rag, dir, power)
+	-- A / D: the whole body spins around the CAMERA forward axis, and follows the camera roll like a stick
+	-- dir = 1 rolls right (D), dir = -1 rolls left (A), dir = 0 only catches up with the camera
+	local function RollBody(ply, rag, dir)
+		local power = CV.wr_roll_power:GetFloat()
 		if power <= 0 then return end
-		local pelvis = rag:GetPhysicsObjectNum(PhysNum(rag, 0))
-		local head = rag:GetPhysicsObjectNum(PhysNum(rag, 10))
-		if not (IsValid(pelvis) and IsValid(head)) then return end
-		local axis = head:GetPos() - pelvis:GetPos()
-		if axis:LengthSqr() < 1 then return end
-		axis:Normalize()
+		local eye = ply:EyeAngles()
+		local axis = eye:Forward()
 
 		local list, totalMass, com = {}, 0, Vector(0, 0, 0)
 		for i = 0, rag:GetPhysicsObjectCount() - 1 do
@@ -814,9 +815,25 @@ if SERVER then
 			I = I + o.m * o.t:LengthSqr()
 		end
 		local omega = I > 0 and L / I or 0
-		if omega * dir > 10 * power then return end -- speed limit (rad/s)
 
-		local dv = 28 * power * dir * engine.TickInterval() -- rad/s gained this tick
+		-- wanted speed: same as the camera + correction of the head roll relative to the camera roll
+		local target = dir * math.rad(WR.RollRate())
+		local att = rag:GetAttachment(rag:LookupAttachment("eyes"))
+		if att then
+			local hu, cu = att.Ang:Up(), eye:Up()
+			hu = hu - axis * hu:Dot(axis)
+			cu = cu - axis * cu:Dot(axis)
+			if hu:LengthSqr() > 0.05 and cu:LengthSqr() > 0.05 then
+				hu:Normalize()
+				cu:Normalize()
+				local err = math.atan2(axis:Dot(hu:Cross(cu)), hu:Dot(cu))
+				target = target + err * 6
+			end
+		end
+		target = math.Clamp(target, -12, 12)
+
+		local maxdv = 40 * power * engine.TickInterval()
+		local dv = math.Clamp(target - omega, -maxdv, maxdv)
 		for _, o in ipairs(list) do
 			o.p:Wake()
 			o.p:AddVelocity(o.t * dv)
@@ -1003,8 +1020,10 @@ if SERVER then
 
 		-- roll / somersault on A / D
 		local rl, rr = WR.Key(ply, K.ROLLL), WR.Key(ply, K.ROLLR)
-		if rl ~= rr then RollBody(rag, rl and 1 or -1, CV.wr_roll_power:GetFloat()) end
-
+		local rdir = (rr and 1 or 0) - (rl and 1 or 0)
+		if rdir ~= 0 then rag.WR_RollUntil = now + 0.8 end
+		if now < (rag.WR_RollUntil or 0) then RollBody(ply, rag, rdir) end
+		
 		-- fast fall: limbs flail
 		local vlen = rag:GetVelocity():Length()
 		if vlen > 350 then
@@ -1360,7 +1379,11 @@ if CLIENT then
 		local huy = follow:GetVelocity():Dot(angle:Right()) / 1500
 		angle.roll = math.NormalizeAngle(angle.roll)
 
-		if math.abs(math.AngleDifference(0, angle.roll)) < 60 then
+		local rdir = (WR.Key(ply, K.ROLLR) and 1 or 0) - (WR.Key(ply, K.ROLLL) and 1 or 0)
+		if rdir ~= 0 then ply.WR_RollUntil = CurTime() + 0.8 end
+		local rolling = CurTime() < (ply.WR_RollUntil or 0)
+
+		if not rolling and math.abs(math.AngleDifference(0, angle.roll)) < 60 then
 			angle = LerpAngle(lerpft(0.01), angle, Angle(angle.pitch, angle.yaw, 0))
 		end
 
@@ -1382,6 +1405,11 @@ if CLIENT then
 				a:RotateAroundAxis(axis, LIMIT - ang)
 				a:Normalize()
 			end
+		end
+
+		if rdir ~= 0 then
+			a:RotateAroundAxis(a:Forward(), rdir * WR.RollRate() * FrameTime())
+			a:Normalize()
 		end
 
 		ply.WR_Roll = a.roll
