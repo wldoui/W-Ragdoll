@@ -3,251 +3,265 @@ AddCSLuaFile()
 SWEP.PrintName      = "Hands"
 SWEP.Author         = "Wyldi"
 SWEP.Purpose        = "ЛКМ - драться, R - убрать кулаки."
-SWEP.Instructions   = "ЛКМ: достать кулаки и бить. R (настраивается): пустые руки."
+SWEP.Instructions   = "ЛКМ: достать кулаки и бить. R: пустые руки."
 SWEP.Category       = "Other"
-
-SWEP.Spawnable      = true
+SWEP.Spawnable 		= true
 SWEP.AdminSpawnable = true
 
 -- ================== НАСТРОЙКИ ==================
-SWEP.ToggleKey   = KEY_R
-SWEP.HitDistance = 48
+local RUNNER_MODEL = "models/runnerhands.mdl"
+
+SWEP.HitDistance = 50
 SWEP.DamageMin   = 8
 SWEP.DamageMax   = 12
+SWEP.MidMult     = 1.6
+SWEP.ComboReset  = 0.5
+
+-- Названия анимаций (пробуются по порядку). punch1..3 - из runnerhands.mdl
+local PUNCH_SEQ = {
+	{"punch1", "punchright"},
+	{"punch2", "punchleft"},
+	{"punch3", "punchmid"},
+}
+local DRAW_SEQ = {"draw", "fists_draw", "deploy"}
+local IDLE_SEQ = {"idle", "idle1", "fists_idle_01"}
+
+-- В какой доле анимации происходит попадание
+local HIT_FRAC  = {0.30, 0.30, 0.40}
+-- Какую часть анимации ждать до следующего удара
+local NEXT_FRAC = {0.65, 0.65, 0.85}
+local PUNCH_VP  = {Angle(2, 1, -2), Angle(2, -1, 2), Angle(3, 0, 0)}
 -- ===============================================
 
-SWEP.Slot       = 0
-SWEP.SlotPos    = 0
-SWEP.Weight     = 0
-SWEP.AutoSwitchTo   = false
+SWEP.Slot = 0
+SWEP.SlotPos = 0
+SWEP.Weight = 0
+SWEP.AutoSwitchTo = false
 SWEP.AutoSwitchFrom = false
-SWEP.DrawAmmo       = false
-SWEP.DrawCrosshair  = false
+SWEP.DrawAmmo = false
+SWEP.DrawCrosshair = false
 
--- Вшитые руки из обычного GMod (как в weapon_fists)
-SWEP.ViewModel    = Model( "models/weapons/c_arms.mdl" )
-SWEP.WorldModel   = ""
-SWEP.ViewModelFOV = 54
+local useRunner = util.IsValidModel(RUNNER_MODEL)
+SWEP.ViewModel    = useRunner and RUNNER_MODEL --or "models/weapons/c_arms.mdl"
 SWEP.UseHands     = true
+SWEP.ViewModelFOV = 70
+SWEP.WorldModel   = ""
 SWEP.HoldType     = "normal"
 
-SWEP.Primary.ClipSize      = -1
-SWEP.Primary.DefaultClip   = -1
-SWEP.Primary.Automatic     = true
-SWEP.Primary.Ammo          = "none"
-
-SWEP.Secondary.ClipSize    = -1
+SWEP.Primary.ClipSize = -1
+SWEP.Primary.DefaultClip = -1
+SWEP.Primary.Automatic = true
+SWEP.Primary.Ammo = "none"
+SWEP.Secondary.ClipSize = -1
 SWEP.Secondary.DefaultClip = -1
-SWEP.Secondary.Automatic   = false
-SWEP.Secondary.Ammo        = "none"
+SWEP.Secondary.Automatic = false
+SWEP.Secondary.Ammo = "none"
 
-local SwingSound = Sound( "WeaponFrag.Throw" )
-local HitSound   = Sound( "Flesh.ImpactHard" )
+local function SoundOr(path, fallback)
+	return file.Exists("sound/" .. path, "GAME") and path or fallback
+end
 
 if CLIENT then
-    SWEP.WepSelectIcon = surface.GetTextureID( "weapons/weapon_hands" )
+	SWEP.WepSelectIcon = surface.GetTextureID("weapons/weapon_hands")
+	function SWEP:DrawWeaponSelection(x, y, wide, tall, alpha)
+		surface.SetDrawColor(255, 255, 255, alpha)
+		surface.SetTexture(self.WepSelectIcon)
+		surface.DrawTexturedRect(x + 10, y + 10, wide - 20, (wide - 20) / 2)
+	end
 
-    function SWEP:DrawWeaponSelection( x, y, wide, tall, alpha )
-        surface.SetDrawColor( 255, 255, 255, alpha )
-        surface.SetTexture( self.WepSelectIcon )
-        y = y + 10
-        x = x + 10
-        wide = wide - 20
-        surface.DrawTexturedRect( x, y, wide, wide / 2 )
-    end
+	-- wh_dump: список анимаций текущей вьюмодели
+	concommand.Add("wh_dump", function()
+		local vm = LocalPlayer():GetViewModel()
+		if not IsValid(vm) then return print("нет вьюмодели") end
+		print("VM model:", vm:GetModel(), "sequences:", vm:GetSequenceCount())
+		for i = 0, vm:GetSequenceCount() - 1 do
+			print(i, vm:GetSequenceName(i), vm:GetSequenceActivityName(i))
+		end
+	end)
 end
 
 function SWEP:SetupDataTables()
-    self:NetworkVar( "Bool",  0, "Fists" )            -- true = режим драки
-    self:NetworkVar( "Float", 0, "NextMeleeAttack" )
-    self:NetworkVar( "Float", 1, "NextIdle" )
-    self:NetworkVar( "Bool",  1, "RightPunch" )
+	self:NetworkVar("Bool",  0, "Fists")
+	self:NetworkVar("Float", 0, "NextIdle")
+	self:NetworkVar("Float", 1, "PunchReset")
+	self:NetworkVar("Float", 2, "PendingHit")
+	self:NetworkVar("Int",   0, "Punch")
+	self:NetworkVar("Int",   1, "PendingIdx")
 end
 
 function SWEP:Initialize()
-    self:SetHoldType( "normal" )
-    self:SetFists( false )
+	self:SetHoldType("normal")
+	self:SetFists(false)
+	self:SetPunch(1)
 end
 
----------------------------------------------------------------
--- Применение режима (пустые руки / кулаки)
----------------------------------------------------------------
+function SWEP:PlayVM(names, act)
+	print( 'Тест:SWEP:PlayVM' ) 
+	local owner = self:GetOwner()
+	if not IsValid(owner) then return 0 end
+	local vm = owner:GetViewModel()
+	if not IsValid(vm) then return 0 end
+	for _, n in ipairs(names) do
+		local s = vm:LookupSequence(n)
+		if s and s >= 0 then
+			vm:SendViewModelMatchingSequence(s)
+			return vm:SequenceDuration(s)
+		end
+	end
+	if act then
+		self:SendWeaponAnim(act)
+		return vm:SequenceDuration()
+	end
+	return 0
+end
+
 function SWEP:ApplyMode()
-    local owner = self:GetOwner()
-    if not IsValid( owner ) or not owner:IsPlayer() then return end
-
-    if self:GetFists() then
-        self:SetHoldType( "fist" )
-        if SERVER then owner:DrawViewModel( true ) end
-
-        local vm = owner:GetViewModel()
-        if IsValid( vm ) then
-            vm:SendViewModelMatchingSequence( vm:LookupSequence( "fists_draw" ) )
-            self:SetNextIdle( CurTime() + vm:SequenceDuration() )
-        end
-    else
-        self:SetHoldType( "normal" )
-        self:SetNextMeleeAttack( 0 )
-        self:SetNextIdle( 0 )
-        if SERVER then owner:DrawViewModel( false ) end
-    end
+	print( 'Тест:SWEP:ApplyMode' ) 
+	local owner = self:GetOwner()
+	if not IsValid(owner) or not owner:IsPlayer() then return end
+	if self:GetFists() then
+		self:SetHoldType("fist")
+		if SERVER then owner:DrawViewModel(true) end
+		local d = self:PlayVM(DRAW_SEQ, ACT_VM_DRAW)
+		self:SetNextIdle(CurTime() + d)
+	else
+		self:SetHoldType("normal")
+		self:SetNextIdle(0)
+		self:SetPendingHit(0)
+		if SERVER then owner:DrawViewModel(false) end
+	end
 end
 
 function SWEP:Deploy()
-    self:ApplyMode()
-    return true
+	print( 'Тест:SWEP:Deploy' ) 
+	self:ApplyMode()
+	return true
 end
 
 function SWEP:Holster()
-    local owner = self:GetOwner()
-    -- ОБЯЗАТЕЛЬНО возвращаем вьюмодель, иначе другие пушки будут невидимы
-    if SERVER and IsValid( owner ) and owner:IsPlayer() then
-        owner:DrawViewModel( true )
-    end
-    self:SetNextMeleeAttack( 0 )
-    return true
+	local owner = self:GetOwner()
+	if SERVER and IsValid(owner) and owner:IsPlayer() then owner:DrawViewModel(true) end
+	self:SetPendingHit(0)
+	return true
 end
 
 function SWEP:OnRemove()
-    local owner = self:GetOwner()
-    if SERVER and IsValid( owner ) and owner:IsPlayer() then
-        owner:DrawViewModel( true )
-    end
+	local owner = self:GetOwner()
+	if SERVER and IsValid(owner) and owner:IsPlayer() then owner:DrawViewModel(true) end
 end
 
-function SWEP:OnDrop()
-    self:Remove()
-end
+function SWEP:OnDrop() self:Remove() end
+function SWEP:ShouldDropOnDie() return false end
 
-function SWEP:ShouldDropOnDie()
-    return false
-end
-
----------------------------------------------------------------
--- Атака
----------------------------------------------------------------
-function SWEP:PrimaryAttack()
-    local owner = self:GetOwner()
-    if not IsValid( owner ) then return end
-
-    -- Если руки пустые - достаём кулаки и сразу бьём
-    if not self:GetFists() then
-        self:SetFists( true )
-        self:ApplyMode()
-    end
-
-    owner:SetAnimation( PLAYER_ATTACK1 )
-
-    local right = self:GetRightPunch()
-    local anim  = right and "fists_right" or "fists_left"
-    self:SetRightPunch( not right )
-
-    local vm = owner:GetViewModel()
-    if IsValid( vm ) then
-        vm:SendViewModelMatchingSequence( vm:LookupSequence( anim ) )
-        self:SetNextIdle( CurTime() + vm:SequenceDuration() )
-    end
-
-    self:EmitSound( SwingSound )
-    self:SetNextMeleeAttack( CurTime() + 0.2 )
-    self:SetNextPrimaryFire( CurTime() + 0.6 )
-    self:SetNextSecondaryFire( CurTime() + 0.6 )
+function SWEP:Reload()
+	if self:GetFists() and (self.NextToggle or 0) < CurTime() then
+		self.NextToggle = CurTime() + 0.5
+		self:SetFists(false)
+		self:ApplyMode()
+	end
 end
 
 function SWEP:SecondaryAttack() end
 
--- R по умолчанию тоже вызывает Reload; переключение делается в хуке ниже
-function SWEP:Reload() end
+function SWEP:PrimaryAttack()
+	print( 'Тест:SWEP:PrimaryAttack' ) 
+	local owner = self:GetOwner()
+	if not IsValid(owner) then return end
 
-function SWEP:DealDamage()
-    local owner = self:GetOwner()
-    if not IsValid( owner ) then return end
+	if not self:GetFists() then
+	print( 'Тест:self:GetFists' ) 
+		self:SetFists(true)
+		self:ApplyMode()
+		self:SetNextPrimaryFire(CurTime() + 0.5)
+		return
+	end
 
-    owner:LagCompensation( true )
+	local now = CurTime()
+	if now > self:GetPunchReset() then self:SetPunch(1) end
+	local p = math.Clamp(self:GetPunch(), 1, 3)
 
-    local startPos = owner:GetShootPos()
-    local endPos   = startPos + owner:GetAimVector() * self.HitDistance
+	local dur = self:PlayVM(PUNCH_SEQ[p], ACT_VM_HITCENTER)
+	if dur <= 0 then dur = 0.6 end
 
-    local tr = util.TraceLine( {
-        start  = startPos,
-        endpos = endPos,
-        filter = owner,
-        mask   = MASK_SHOT_HULL
-    } )
+	owner:SetAnimation(PLAYER_ATTACK1)
+	owner:ViewPunch(PUNCH_VP[p])
 
-    if not IsValid( tr.Entity ) then
-        tr = util.TraceHull( {
-            start  = startPos,
-            endpos = endPos,
-            filter = owner,
-            mins   = Vector( -10, -10, -8 ),
-            maxs   = Vector( 10, 10, 8 ),
-            mask   = MASK_SHOT_HULL
-        } )
-    end
+	local nextAt = now + dur * NEXT_FRAC[p]
+	self:SetPendingIdx(p)
+	self:SetPendingHit(now + dur * HIT_FRAC[p])
+	self:SetNextPrimaryFire(nextAt)
+	self:SetNextSecondaryFire(nextAt)
+	self:SetNextIdle(now + dur)
+	self:SetPunchReset(now + dur + self.ComboReset)
+	self:SetPunch(p % 3 + 1)
+end
 
-    if tr.Hit then self:EmitSound( HitSound ) end
+function SWEP:DoHit(idx)
 
-    local scale = GetConVar( "phys_pushscale" ):GetFloat()
-    local ent   = tr.Entity
+	local owner = self:GetOwner()
+	if not IsValid(owner) then return end
 
-    if SERVER and IsValid( ent ) and ( ent:IsNPC() or ent:IsPlayer() or ent:Health() > 0 ) then
-        local dmg = DamageInfo()
-        dmg:SetAttacker( owner )
-        dmg:SetInflictor( self )
-        dmg:SetDamage( math.random( self.DamageMin, self.DamageMax ) )
-        dmg:SetDamageForce( owner:GetRight() * 4912 * scale + owner:GetForward() * 9998 * scale )
-        ent:TakeDamageInfo( dmg )
-    end
+	owner:LagCompensation(true)
+	local start = owner:GetShootPos()
+	local dir = owner:GetAimVector()
+	local tr = util.TraceLine({start = start, endpos = start + dir * self.HitDistance, filter = owner, mask = MASK_SHOT_HULL})
+	if not IsValid(tr.Entity) then
+		tr = util.TraceHull({
+			start = start, endpos = start + dir * self.HitDistance, filter = owner,
+			mins = Vector(-10, -10, -8), maxs = Vector(10, 10, 8), mask = MASK_SHOT_HULL,
+		})
+	end
+	owner:LagCompensation(false)
 
-    if IsValid( ent ) then
-        local phys = ent:GetPhysicsObject()
-        if IsValid( phys ) then
-            phys:ApplyForceOffset( owner:GetAimVector() * 80 * phys:GetMass() * scale, tr.HitPos )
-        end
-    end
+	if not tr.Hit or CLIENT then return end
 
-    owner:LagCompensation( false )
+	local mult = idx == 3 and self.MidMult or 1
+	local ent = tr.Entity
+	if IsValid(ent) then
+		local dmg = DamageInfo()
+		dmg:SetDamage(math.random(self.DamageMin, self.DamageMax) * mult)
+		dmg:SetDamageType(DMG_CLUB)
+		dmg:SetAttacker(owner)
+		dmg:SetInflictor(self)
+		dmg:SetDamageForce(dir * 8000 * mult)
+		dmg:SetDamagePosition(tr.HitPos)
+		ent:DispatchTraceAttack(dmg, tr, dir)
+
+		local phys = ent:GetPhysicsObject()
+		if IsValid(phys) and not ent:IsPlayer() and not ent:IsNPC() then
+			phys:ApplyForceOffset(dir * 12000 * mult, tr.HitPos)
+		end
+	end
 end
 
 function SWEP:Think()
-    if not self:GetFists() then return end
+	local owner = self:GetOwner()
+	if not IsValid(owner) or not self:GetFists() then return end
+	local now = CurTime()
 
-    local owner = self:GetOwner()
-    if not IsValid( owner ) then return end
+	local hit = self:GetPendingHit()
+	if hit > 0 and now >= hit then
+		self:SetPendingHit(0)
+		self:DoHit(self:GetPendingIdx())
+	end
 
-    local melee = self:GetNextMeleeAttack()
-    if melee > 0 and CurTime() > melee then
-        self:DealDamage()
-        self:SetNextMeleeAttack( 0 )
-    end
-
-    local idle = self:GetNextIdle()
-    if idle > 0 and CurTime() > idle then
-        local vm = owner:GetViewModel()
-        if IsValid( vm ) then
-            vm:SendViewModelMatchingSequence( vm:LookupSequence( "fists_idle0" .. math.random( 1, 2 ) ) )
-            self:SetNextIdle( CurTime() + vm:SequenceDuration() )
-        end
-    end
+	local idle = self:GetNextIdle()
+	if idle > 0 and now >= idle then
+		self:PlayVM(IDLE_SEQ, ACT_VM_IDLE)
+		self:SetNextIdle(0)
+	end
 end
 
--- Мировую модель не рисуем
-function SWEP:DrawWorldModel() end
-function SWEP:DrawWorldModelTranslucent() end
-
----------------------------------------------------------------
--- Кнопка "убрать кулаки" (пустые руки)
----------------------------------------------------------------
 if SERVER then
-    hook.Add( "PlayerButtonDown", "WyldiHands_Toggle", function( ply, button )
-        local wep = ply:GetActiveWeapon()
-        if not IsValid( wep ) or wep:GetClass() ~= "weapon_hands" then return end
-        if button ~= wep.ToggleKey then return end
+    hook.Add("PlayerSpawn", "GiveDefaultHandsWeapon", function(ply)
+        timer.Simple(0, function()
+            if not IsValid(ply) then return end
 
-        if wep:GetFists() then
-            wep:SetFists( false )
-            wep:ApplyMode()
-        end
-    end )
+            if not ply:HasWeapon("weapon_hands") then
+                ply:Give("weapon_hands")
+            end
+
+            ply:SelectWeapon("weapon_hands")
+        end)
+    end)
 end
