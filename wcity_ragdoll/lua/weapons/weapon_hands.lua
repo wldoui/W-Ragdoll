@@ -2,7 +2,7 @@ AddCSLuaFile()
 
 SWEP.PrintName      = "Hands"
 SWEP.Author         = "Wyldi"
-SWEP.Purpose        = "ЛКМ - драться, кнопка переключения - убрать кулаки."
+SWEP.Purpose        = "ЛКМ - драться, R - убрать кулаки."
 SWEP.Instructions   = "ЛКМ: достать кулаки и бить. R (настраивается): пустые руки."
 SWEP.Category       = "Other"
 
@@ -10,7 +10,7 @@ SWEP.Spawnable      = true
 SWEP.AdminSpawnable = true
 
 -- ================== НАСТРОЙКИ ==================
-SWEP.ToggleKey   = KEY_R      -- кнопка "убрать кулаки" (например KEY_T, KEY_G, KEY_X...)
+SWEP.ToggleKey   = KEY_R
 SWEP.HitDistance = 48
 SWEP.DamageMin   = 8
 SWEP.DamageMax   = 12
@@ -242,7 +242,7 @@ function SWEP:DrawWorldModelTranslucent() end
 if SERVER then
     hook.Add( "PlayerButtonDown", "WyldiHands_Toggle", function( ply, button )
         local wep = ply:GetActiveWeapon()
-        if not IsValid( wep ) or wep:GetClass() ~= "weapon_hands_fists" then return end
+        if not IsValid( wep ) or wep:GetClass() ~= "weapon_hands" then return end
         if button ~= wep.ToggleKey then return end
 
         if wep:GetFists() then
