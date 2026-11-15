@@ -5,7 +5,7 @@ SWEP.Author         = "Wyldi"
 SWEP.Purpose        = "ЛКМ - драться, R - убрать кулаки."
 SWEP.Instructions   = "ЛКМ: достать кулаки и бить. R: пустые руки."
 SWEP.Category       = "Other"
-SWEP.Spawnable 		= true
+SWEP.Spawnable      = true
 SWEP.AdminSpawnable = true
 
 -- ================== НАСТРОЙКИ ==================
@@ -17,7 +17,6 @@ SWEP.DamageMax   = 12
 SWEP.MidMult     = 1.6
 SWEP.ComboReset  = 0.5
 
--- Названия анимаций (пробуются по порядку). punch1..3 - из runnerhands.mdl
 local PUNCH_SEQ = {
 	{"punch1", "punchright"},
 	{"punch2", "punchleft"},
@@ -26,9 +25,7 @@ local PUNCH_SEQ = {
 local DRAW_SEQ = {"draw", "fists_draw", "deploy"}
 local IDLE_SEQ = {"idle", "idle1", "fists_idle_01"}
 
--- В какой доле анимации происходит попадание
 local HIT_FRAC  = {0.30, 0.30, 0.40}
--- Какую часть анимации ждать до следующего удара
 local NEXT_FRAC = {0.65, 0.65, 0.85}
 local PUNCH_VP  = {Angle(2, 1, -2), Angle(2, -1, 2), Angle(3, 0, 0)}
 -- ===============================================
@@ -42,7 +39,7 @@ SWEP.DrawAmmo = false
 SWEP.DrawCrosshair = false
 
 local useRunner = util.IsValidModel(RUNNER_MODEL)
-SWEP.ViewModel    = useRunner and RUNNER_MODEL --or "models/weapons/c_arms.mdl"
+SWEP.ViewModel    = useRunner and RUNNER_MODEL
 SWEP.UseHands     = true
 SWEP.ViewModelFOV = 70
 SWEP.WorldModel   = ""
@@ -57,10 +54,6 @@ SWEP.Secondary.DefaultClip = -1
 SWEP.Secondary.Automatic = false
 SWEP.Secondary.Ammo = "none"
 
-local function SoundOr(path, fallback)
-	return file.Exists("sound/" .. path, "GAME") and path or fallback
-end
-
 if CLIENT then
 	SWEP.WepSelectIcon = surface.GetTextureID("weapons/weapon_hands")
 	function SWEP:DrawWeaponSelection(x, y, wide, tall, alpha)
@@ -69,7 +62,6 @@ if CLIENT then
 		surface.DrawTexturedRect(x + 10, y + 10, wide - 20, (wide - 20) / 2)
 	end
 
-	-- wh_dump: список анимаций текущей вьюмодели
 	concommand.Add("wh_dump", function()
 		local vm = LocalPlayer():GetViewModel()
 		if not IsValid(vm) then return print("нет вьюмодели") end
@@ -96,7 +88,6 @@ function SWEP:Initialize()
 end
 
 function SWEP:PlayVM(names, act)
-	print( 'Тест:SWEP:PlayVM' ) 
 	local owner = self:GetOwner()
 	if not IsValid(owner) then return 0 end
 	local vm = owner:GetViewModel()
@@ -116,7 +107,6 @@ function SWEP:PlayVM(names, act)
 end
 
 function SWEP:ApplyMode()
-	print( 'Тест:SWEP:ApplyMode' ) 
 	local owner = self:GetOwner()
 	if not IsValid(owner) or not owner:IsPlayer() then return end
 	if self:GetFists() then
@@ -133,7 +123,6 @@ function SWEP:ApplyMode()
 end
 
 function SWEP:Deploy()
-	print( 'Тест:SWEP:Deploy' ) 
 	self:ApplyMode()
 	return true
 end
@@ -164,12 +153,10 @@ end
 function SWEP:SecondaryAttack() end
 
 function SWEP:PrimaryAttack()
-	print( 'Тест:SWEP:PrimaryAttack' ) 
 	local owner = self:GetOwner()
 	if not IsValid(owner) then return end
 
 	if not self:GetFists() then
-	print( 'Тест:self:GetFists' ) 
 		self:SetFists(true)
 		self:ApplyMode()
 		self:SetNextPrimaryFire(CurTime() + 0.5)
@@ -196,43 +183,68 @@ function SWEP:PrimaryAttack()
 	self:SetPunch(p % 3 + 1)
 end
 
+-- ================== ЭФФЕКТЫ ПО МАТЕРИАЛУ ==================
 local SURFACE_DECAL = {
-	[MAT_CONCRETE] = "Impact.Concrete",
+	[MAT_CONCRETE] = "Impact.Sand",
+	[MAT_TILE]     = "Impact.Sand",
 	[MAT_WOOD]     = "Impact.Wood",
-	[MAT_METAL]    = "Impact.Metal",
+	[MAT_METAL]    = "Impact.Sand",
 	[MAT_GRATE]    = "Impact.Metal",
-	[MAT_DIRT]     = "Impact.Dirt",
-	[MAT_SAND]     = "Impact.Dirt",
-	[MAT_SNOW]     = "Impact.Snow",
-	[MAT_TILE]     = "Impact.Tile",
+	[MAT_VENT]     = "Impact.Metal",
+	[MAT_COMPUTER] = "Impact.Metal",
+	[MAT_DIRT]     = "Impact.Sand",
+	[MAT_SAND]     = "Impact.Sand",
+	[MAT_SNOW]     = "Impact.Sand",
 	[MAT_GLASS]    = "Impact.Glass",
-	[MAT_PLASTIC]  = "Impact.Plastic"
+	[MAT_PLASTIC]  = "Impact.Sand",
 }
 
 local SURFACE_SOUNDS = {
-    [MAT_CONCRETE] = "physics/concrete/concrete_impact_hard1.wav",
-    [MAT_WOOD]     = "physics/wood/wood_solid_impact_hard1.wav",
-    [MAT_METAL]    = "physics/metal/metal_solid_impact_hard1.wav",
-    [MAT_GRATE]    = "physics/metal/metal_grate_impact_hard1.wav",
-    [MAT_DIRT]     = "physics/surfaces/sand_impact_hard1.wav",
-    [MAT_SAND]     = "physics/surfaces/sand_impact_hard1.wav",
-    [MAT_GLASS]    = "physics/glass/glass_impact_hard1.wav",
-    [MAT_TILE]     = "physics/concrete/concrete_impact_hard1.wav",
-    [MAT_PLASTIC]  = "physics/plastic/plastic_box_impact_hard1.wav",
-    [MAT_FLESH]    = "physics/flesh/flesh_impact_bullet1.wav",
+	[MAT_CONCRETE] = "physics/concrete/concrete_impact_hard1.wav",
+	[MAT_TILE]     = "physics/concrete/concrete_impact_hard1.wav",
+	[MAT_WOOD]     = "physics/wood/wood_solid_impact_hard1.wav",
+	[MAT_METAL]    = "physics/metal/metal_solid_impact_hard1.wav",
+	[MAT_GRATE]    = "physics/metal/metal_grate_impact_hard1.wav",
+	[MAT_VENT]     = "physics/metal/metal_solid_impact_hard1.wav",
+	[MAT_COMPUTER] = "physics/metal/metal_solid_impact_hard1.wav",
+	[MAT_DIRT]     = "physics/surfaces/sand_impact_bullet1.wav",
+	[MAT_SAND]     = "physics/surfaces/sand_impact_bullet1.wav",
+	[MAT_SNOW]     = "physics/surfaces/sand_impact_bullet1.wav",
+	[MAT_GLASS]    = "physics/glass/glass_impact_hard1.wav",
+	[MAT_PLASTIC]  = "physics/plastic/plastic_box_impact_hard1.wav",
+	[MAT_FLESH]    = "physics/flesh/flesh_impact_hit1.wav",
+	[MAT_BLOODYFLESH] = "physics/flesh/flesh_impact_hit1.wav",
+	[MAT_ALIENFLESH]  = "physics/flesh/flesh_impact_hit1.wav",
 }
 
-function SWEP:PlayImpactSound(tr)
-    local snd = SURFACE_SOUNDS[tr.MatType]
+local DEFAULT_SOUND = "physics/concrete/concrete_impact_hard1.wav"
+local DEFAULT_DECAL = "Impact.Concrete"
 
-    if not snd then
-        snd = "physics/concrete/concrete_impact_hard1.wav"
-    end
+local function GetDecalName(tr)
+	local name = SURFACE_DECAL[tr.MatType] or DEFAULT_DECAL
+	local m = util.DecalMaterial(name)
+	if not m or m == "" then name = DEFAULT_DECAL end
+	return name
+end
 
-    sound.Play(snd, tr.HitPos, 75, math.random(95, 105), 1)
+function SWEP:PlayImpactSound(tr, living)
+	local snd
+	if living then
+		snd = SURFACE_SOUNDS[MAT_FLESH]
+	else
+		snd = SURFACE_SOUNDS[tr.MatType] or DEFAULT_SOUND
+	end
+	sound.Play(snd, tr.HitPos, 75, math.random(95, 105), 1)
+end
+
+function SWEP:WallHitFX(tr)
+	local startPos = tr.HitPos + tr.HitNormal * 4
+	local endPos   = tr.HitPos - tr.HitNormal * 4
+	util.Decal(GetDecalName(tr), startPos, endPos, self:GetOwner())
 end
 
 function SWEP:DoHit(idx)
+	if CLIENT then return end
 
 	local owner = self:GetOwner()
 	if not IsValid(owner) then return end
@@ -240,8 +252,11 @@ function SWEP:DoHit(idx)
 	owner:LagCompensation(true)
 	local start = owner:GetShootPos()
 	local dir = owner:GetAimVector()
-	local tr = util.TraceLine({start = start, endpos = start + dir * self.HitDistance, filter = owner, mask = MASK_SHOT_HULL})
-	if not IsValid(tr.Entity) then
+	local tr = util.TraceLine({
+		start = start, endpos = start + dir * self.HitDistance,
+		filter = owner, mask = MASK_SHOT_HULL,
+	})
+	if not tr.Hit then
 		tr = util.TraceHull({
 			start = start, endpos = start + dir * self.HitDistance, filter = owner,
 			mins = Vector(-10, -10, -8), maxs = Vector(10, 10, 8), mask = MASK_SHOT_HULL,
@@ -249,13 +264,17 @@ function SWEP:DoHit(idx)
 	end
 	owner:LagCompensation(false)
 
-	if not tr.Hit or CLIENT then return end
+	-- промах или небо: ничего не делаем
+	if not tr.Hit or tr.HitSky then return end
 
-	self:PlayImpactSound(tr)
+	local ent = tr.Entity
+	local living = IsValid(ent) and (ent:IsPlayer() or ent:IsNPC())
+
+	self:PlayImpactSound(tr, living)
 
 	local mult = idx == 3 and self.MidMult or 1
-	local ent = tr.Entity
-	if IsValid(ent) then
+
+	if IsValid(ent) and not ent:IsWorld() then
 		local dmg = DamageInfo()
 		dmg:SetDamage(math.random(self.DamageMin, self.DamageMax) * mult)
 		dmg:SetDamageType(DMG_CLUB)
@@ -266,29 +285,15 @@ function SWEP:DoHit(idx)
 		ent:DispatchTraceAttack(dmg, tr, dir)
 
 		local phys = ent:GetPhysicsObject()
-		if IsValid(phys) and not ent:IsPlayer() and not ent:IsNPC() then
+		if IsValid(phys) and not living then
 			phys:ApplyForceOffset(dir * 12000 * mult, tr.HitPos)
 		end
 	end
-		-- Пыль и декаль только по твёрдым поверхностям (стены/мир/статик-пропы), не по игрокам/NPC
-	if tr.HitSky then return end
-	if not IsValid(ent) or (ent:IsWorld() or not (ent:IsPlayer() or ent:IsNPC())) then
-		self:WallHitFX(tr, ent)
+
+	-- декаль только на твёрдых поверхностях (не на игроках/NPC)
+	if not living then
+		self:WallHitFX(tr)
 	end
-end
-
-
-function SWEP:WallHitFX(tr, ent)
-	local decal = SURFACE_DECAL[tr.MatType] or "Impact.Concrete"
-	util.Decal(decal, tr.StartPos, tr.HitPos)
-
-	local ed = EffectData()
-	ed:SetOrigin(tr.HitPos)
-	ed:SetNormal(tr.HitNormal)
-	ed:SetStart(tr.StartPos)
-	ed:SetEntity(ent or game.GetWorld())
-	ed:SetScale(1)
-	util.Effect("Impact", ed, true, true)
 end
 
 function SWEP:Think()
@@ -296,10 +301,12 @@ function SWEP:Think()
 	if not IsValid(owner) or not self:GetFists() then return end
 	local now = CurTime()
 
-	local hit = self:GetPendingHit()
-	if hit > 0 and now >= hit then
-		self:SetPendingHit(0)
-		self:DoHit(self:GetPendingIdx())
+	if SERVER then
+		local hit = self:GetPendingHit()
+		if hit > 0 and now >= hit then
+			self:SetPendingHit(0)
+			self:DoHit(self:GetPendingIdx())
+		end
 	end
 
 	local idle = self:GetNextIdle()
@@ -310,15 +317,15 @@ function SWEP:Think()
 end
 
 if SERVER then
-    hook.Add("PlayerSpawn", "GiveDefaultHandsWeapon", function(ply)
-        timer.Simple(0, function()
-            if not IsValid(ply) then return end
+	hook.Add("PlayerSpawn", "GiveDefaultHandsWeapon", function(ply)
+		timer.Simple(0, function()
+			if not IsValid(ply) then return end
 
-            if not ply:HasWeapon("weapon_hands") then
-                ply:Give("weapon_hands")
-            end
+			if not ply:HasWeapon("weapon_hands") then
+				ply:Give("weapon_hands")
+			end
 
-            ply:SelectWeapon("weapon_hands")
-        end)
-    end)
+			ply:SelectWeapon("weapon_hands")
+		end)
+	end)
 end
